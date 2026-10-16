@@ -1,4 +1,5 @@
 - add close + loop
+- handle IPv6
 - start milestone 2: parse the request line
 
 - [x] Setup: C compiler, a Makefile, a git repo with NEXT.md. Skim the stream-server section of Beej's guide.
