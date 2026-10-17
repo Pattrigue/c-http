@@ -45,8 +45,11 @@ int main(void) {
     }
 
     // Create the host address
-    struct sockaddr_in6 server_addr =
-        {.sin6_family = AF_INET6, .sin6_port = htons(PORT), .sin6_addr = in6addr_any};
+    struct sockaddr_in6 server_addr = {
+        .sin6_family = AF_INET6,
+        .sin6_port = htons(PORT),
+        .sin6_addr = in6addr_any,
+    };
 
     // Bind the socket to the host address
     if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
