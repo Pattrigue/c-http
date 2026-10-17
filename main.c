@@ -28,13 +28,7 @@ int main(void) {
 
     // Disable IPv6 only so IPv4 is also accepted
     const int v6only = 0;
-    if (setsockopt(
-            server_fd,
-            IPPROTO_IPV6,
-            IPV6_V6ONLY,
-            &v6only,
-            sizeof(v6only)
-        ) == -1) {
+    if (setsockopt(server_fd, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only)) == -1) {
         err(EXIT_FAILURE, "Failed to set IPv6 only policy");
     }
 
@@ -51,15 +45,11 @@ int main(void) {
     }
 
     // Create the host address
-    struct sockaddr_in6 server_addr = {
-        .sin6_family = AF_INET6,
-        .sin6_port = htons(PORT),
-        .sin6_addr = in6addr_any
-    };
+    struct sockaddr_in6 server_addr =
+        {.sin6_family = AF_INET6, .sin6_port = htons(PORT), .sin6_addr = in6addr_any};
 
     // Bind the socket to the host address
-    if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) ==
-        -1) {
+    if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
         err(EXIT_FAILURE, "Bind failed");
     }
 
@@ -75,11 +65,7 @@ int main(void) {
         struct sockaddr_in6 client_addr;
         socklen_t client_addr_len = sizeof(client_addr);
 
-        int client_fd = accept(
-            server_fd,
-            (struct sockaddr *)&client_addr,
-            &client_addr_len
-        );
+        int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_addr_len);
 
         if (client_fd == -1) {
             perror("Accept failed");
