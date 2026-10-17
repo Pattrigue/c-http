@@ -1,72 +1,114 @@
 #include <err.h>
 #include <netinet/in.h>
-#include <stdint.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #define PORT 8080
+#define BACKLOG 10
 #define BUFFER_SIZE 4096 // bytes
 
 int main(void) {
-    int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    // By default, sending to a client that has disconnected kills the whole
+    // server (SIGPIPE). Ignore that signal so send() just returns an error.
+    if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
+        err(EXIT_FAILURE, "Failed to ignore SIGPIPE");
+    }
 
-    if (socket_fd == -1) {
+    // Create the server socket
+    int server_fd = socket(AF_INET6, SOCK_STREAM, 0);
+
+    if (server_fd == -1) {
         err(EXIT_FAILURE, "Socket creation failed");
     }
 
-    struct sockaddr_in my_addr = {
-        .sin_family = AF_INET,
-        .sin_addr = {.s_addr = htonl(INADDR_ANY)},
-        .sin_port = htons(PORT),
+    // Disable IPv6 only so IPv4 is also accepted
+    const int v6only = 0;
+    if (setsockopt(
+            server_fd,
+            IPPROTO_IPV6,
+            IPV6_V6ONLY,
+            &v6only,
+            sizeof(v6only)
+        ) == -1) {
+        err(EXIT_FAILURE, "Failed to set IPv6 only policy");
+    }
+
+    // Allow reuse of socket address
+    const int reuse_socket_addr = 1;
+    if (setsockopt(
+            server_fd,
+            SOL_SOCKET,
+            SO_REUSEADDR,
+            &reuse_socket_addr,
+            sizeof(reuse_socket_addr)
+        ) == -1) {
+        err(EXIT_FAILURE, "Failed to set socket reuse policy");
+    }
+
+    // Create the host address
+    struct sockaddr_in6 server_addr = {
+        .sin6_family = AF_INET6,
+        .sin6_port = htons(PORT),
+        .sin6_addr = in6addr_any
     };
 
-    int ret = bind(socket_fd, (struct sockaddr *)&my_addr, sizeof(my_addr));
-
-    if (ret == -1) {
+    // Bind the socket to the host address
+    if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) ==
+        -1) {
         err(EXIT_FAILURE, "Bind failed");
     }
 
-    ret = listen(socket_fd, 10);
-
-    if (ret == -1) {
+    // Listen for connections on the socket
+    if (listen(server_fd, BACKLOG) == -1) {
         err(EXIT_FAILURE, "Listen failed");
     }
 
-    struct sockaddr_in peer_addr;
-    socklen_t peer_addr_len = sizeof(peer_addr);
-
     printf("Listening on port %d.\n", PORT);
 
-    int connection_fd = accept(
-        socket_fd,
-        (struct sockaddr *)&peer_addr,
-        &peer_addr_len
-    );
+    while (1) {
+        // Accept incoming connection on the socket
+        struct sockaddr_in6 client_addr;
+        socklen_t client_addr_len = sizeof(client_addr);
 
-    if (connection_fd == -1) {
-        err(EXIT_FAILURE, "Accept failed");
-    }
+        int client_fd = accept(
+            server_fd,
+            (struct sockaddr *)&client_addr,
+            &client_addr_len
+        );
 
-    char buff[BUFFER_SIZE];
-    int bytes_received = recv(connection_fd, buff, BUFFER_SIZE - 1, 0);
+        if (client_fd == -1) {
+            perror("Accept failed");
+            // Nothing to close, client never connected
+            continue;
+        }
 
-    if (bytes_received == -1) {
-        err(EXIT_FAILURE, "Message receival failed");
-    }
+        // Read message from the socket
+        char buff[BUFFER_SIZE];
+        ssize_t bytes_read = recv(client_fd, buff, BUFFER_SIZE - 1, 0);
 
-    buff[bytes_received] = '\0';
-    printf("Receieved from client:\n%s\n", buff);
+        if (bytes_read == -1) {
+            perror("Receive failed");
+            close(client_fd);
+            continue;
+        }
 
-    const char *response = "HTTP/1.1 200 OK\r\n"
-                           "Content-Length: 0\r\n\r\n";
+        buff[bytes_read] = '\0';
+        printf("Read from client:\n%s\n", buff);
 
-    ret = send(connection_fd, response, strlen(response), 0);
+        // Return hardcoded HTTP 1.1 response (for now)
+        const char *response = "HTTP/1.1 200 OK\r\n"
+                               "Content-Length: 0\r\n\r\n";
 
-    if (ret == -1) {
-        perror("Send failed");
+        if (send(client_fd, response, strlen(response), 0) == -1) {
+            perror("Send failed");
+        }
+
+        close(client_fd);
     }
 
     return 0;
