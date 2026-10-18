@@ -12,6 +12,9 @@
 #define BACKLOG 10
 #define BUFFER_SIZE 4096 // bytes
 
+void parse_request(const char *request);
+void parse_request_line(const char *request_line);
+
 int main(void) {
     // By default, sending to a client that has disconnected kills the whole
     // server (SIGPIPE). Ignore that signal so send() just returns an error.
@@ -87,7 +90,7 @@ int main(void) {
         }
 
         buff[bytes_read] = '\0';
-        printf("Read from client:\n%s\n", buff);
+        // printf("Read from client:\n%s\n", buff);
 
         // Return hardcoded HTTP 1.1 response (for now)
         const char *response = "HTTP/1.1 200 OK\r\n"
@@ -97,8 +100,72 @@ int main(void) {
             perror("Send failed");
         }
 
+        parse_request(buff);
+
         close(client_fd);
     }
 
     return 0;
+}
+
+void parse_request(const char *request) {
+    size_t len = strlen(request);
+    int char_index = 0;
+    int line_num = 0;
+
+    for (size_t i = 0; i < len; i++) {
+        if (request[i] != '\r') {
+            continue;
+        }
+
+        if (request[i + 1] != '\n') {
+            // TODO: Return 400
+            return;
+        }
+
+        size_t char_count = i - char_index; // exclude \r\n
+        if (char_count <= 0) {
+            // breaks on final \r\n
+            break;
+        }
+
+        size_t buff_size = char_count + 1;
+        char *line = calloc(buff_size, sizeof(char));
+        if (line == NULL) {
+            // TODO: Return 500
+            err(EXIT_FAILURE, "calloc failed");
+            return;
+        }
+
+        strncpy(line, request + char_index, char_count);
+        line[buff_size - 1] = '\0';
+        printf("%s\n", line);
+
+        char_index = i + 2;
+
+        if (line_num == 0) {
+            parse_request_line(line);
+        }
+
+        free(line);
+        line_num++;
+    }
+
+    if (line_num == 0) {
+        // TODO: Return 400
+    }
+}
+
+void parse_request_line(const char *request_line) {
+    const char *first_space = strchr(request_line, ' ');
+    if (first_space == NULL) {
+        // 400
+        return;
+    }
+
+    const char *second_space = strchr(first_space + 1, ' ');
+    if (second_space == NULL) {
+        // 400
+        return;
+    }
 }
