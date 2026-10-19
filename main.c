@@ -12,8 +12,16 @@
 #define BACKLOG 10
 #define BUFFER_SIZE 4096 // bytes
 
-void parse_request(const char *request);
-void parse_request_line(const char *request_line);
+typedef enum http_status {
+    HTTP_OK = 200,
+    HTTP_BAD_REQUEST = 400,
+    HTTP_METHOD_NOT_ALLOWED = 405,
+    HTTP_URI_TOO_LONG = 414,
+    HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE = 431,
+} http_status;
+
+static http_status parse_request(const char *request);
+static http_status parse_request_line(const char *request_line);
 
 int main(void) {
     // By default, sending to a client that has disconnected kills the whole
@@ -92,7 +100,10 @@ int main(void) {
         buff[bytes_read] = '\0';
         // printf("Read from client:\n%s\n", buff);
 
+        http_status status = parse_request(buff);
+
         // Return hardcoded HTTP 1.1 response (for now)
+        // TODO: Use status in response
         const char *response = "HTTP/1.1 200 OK\r\n"
                                "Content-Length: 0\r\n\r\n";
 
@@ -100,15 +111,13 @@ int main(void) {
             perror("Send failed");
         }
 
-        parse_request(buff);
-
         close(client_fd);
     }
 
     return 0;
 }
 
-void parse_request(const char *request) {
+static http_status parse_request(const char *request) {
     size_t len = strlen(request);
     size_t char_index = 0;
     int line_num = 0;
@@ -121,8 +130,7 @@ void parse_request(const char *request) {
         }
 
         if (request[i + 1] != '\n') {
-            // TODO: Return 400
-            return;
+            return HTTP_BAD_REQUEST;
         }
 
         size_t char_count = i - char_index; // exclude \r\n
@@ -132,8 +140,7 @@ void parse_request(const char *request) {
         }
 
         if (char_count >= sizeof line_buff) { // >= to account for the '\0'
-            // TODO: Return 400
-            return;
+            return line_num == 0 ? HTTP_URI_TOO_LONG : HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE;
         }
 
         memcpy(line_buff, request + char_index, char_count);
@@ -142,27 +149,34 @@ void parse_request(const char *request) {
         char_index = i + 2;
 
         if (line_num == 0) {
-            parse_request_line(line_buff);
+            http_status status = parse_request_line(line_buff);
+
+            if (status != HTTP_OK) {
+                return status;
+            }
         }
 
         line_num++;
     }
 
     if (line_num == 0) {
-        // TODO: Return 400
+        // No lines parsed
+        return HTTP_BAD_REQUEST;
     }
+
+    return HTTP_OK;
 }
 
-void parse_request_line(const char *request_line) {
+static http_status parse_request_line(const char *request_line) {
     const char *first_space = strchr(request_line, ' ');
     if (first_space == NULL) {
-        // 400
-        return;
+        return HTTP_BAD_REQUEST;
     }
 
     const char *second_space = strchr(first_space + 1, ' ');
     if (second_space == NULL) {
-        // 400
-        return;
+        return HTTP_BAD_REQUEST;
     }
+
+    return HTTP_OK;
 }
