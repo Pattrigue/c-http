@@ -1,4 +1,3 @@
-- replace calloc with fixed-size allocated buffer (longer lines get 414 URI too long)
 - find out how to return status codes
 - finish validation on request line:
   - check if there's only 2 spaces

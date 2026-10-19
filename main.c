@@ -110,8 +110,10 @@ int main(void) {
 
 void parse_request(const char *request) {
     size_t len = strlen(request);
-    int char_index = 0;
+    size_t char_index = 0;
     int line_num = 0;
+
+    char line_buff[BUFFER_SIZE];
 
     for (size_t i = 0; i < len; i++) {
         if (request[i] != '\r') {
@@ -124,30 +126,25 @@ void parse_request(const char *request) {
         }
 
         size_t char_count = i - char_index; // exclude \r\n
-        if (char_count <= 0) {
+        if (char_count == 0) {
             // breaks on final \r\n
             break;
         }
 
-        size_t buff_size = char_count + 1;
-        char *line = calloc(buff_size, sizeof(char));
-        if (line == NULL) {
-            // TODO: Return 500
-            err(EXIT_FAILURE, "calloc failed");
+        if (char_count >= sizeof line_buff) { // >= to account for the '\0'
+            // TODO: Return 400
             return;
         }
 
-        strncpy(line, request + char_index, char_count);
-        line[buff_size - 1] = '\0';
-        printf("%s\n", line);
+        memcpy(line_buff, request + char_index, char_count);
+        line_buff[char_count] = '\0';
 
         char_index = i + 2;
 
         if (line_num == 0) {
-            parse_request_line(line);
+            parse_request_line(line_buff);
         }
 
-        free(line);
         line_num++;
     }
 
