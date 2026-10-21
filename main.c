@@ -13,6 +13,7 @@
 
 #define PORT 8080
 #define BACKLOG 10
+#define MAX_PATH_LEN 2048
 #define BUFFER_SIZE 4096 // bytes
 
 typedef enum http_status {
@@ -64,9 +65,14 @@ typedef struct http_request_line {
 } http_request_line;
 
 static http_status parse_request(const char *request);
+
 static http_status parse_request_line(const char *request_line);
+
 static http_status
 parse_method(const char *request_line, const char *method_end, http_method *method);
+
+static http_status
+parse_path(const char *path_start, const char *path_end, char *dest_buf, size_t dest_size);
 
 int main(void) {
     // By default, sending to a client that has disconnected kills the whole
@@ -265,6 +271,12 @@ static http_status parse_request_line(const char *request_line) {
     }
 
     // Parse path
+    char path_buf[MAX_PATH_LEN + 1]; // to include '\0'
+    status = parse_path(spaces[0] + 1, spaces[1], path_buf, sizeof path_buf);
+
+    if (status != HTTP_STATUS_OK) {
+        return status;
+    }
 
     return HTTP_STATUS_OK;
 }
@@ -291,4 +303,22 @@ parse_method(const char *request_line, const char *method_end, http_method *meth
     }
 
     return HTTP_STATUS_NOT_IMPLEMENTED;
+}
+
+static http_status
+parse_path(const char *path_start, const char *path_end, char *dest_buf, size_t dest_size) {
+    if (*path_start != '/') {
+        return HTTP_STATUS_BAD_REQUEST;
+    }
+
+    size_t path_len = path_end - path_start;
+
+    if (path_len >= dest_size) {
+        return HTTP_STATUS_URI_TOO_LONG;
+    }
+
+    memcpy(dest_buf, path_start, path_len);
+    dest_buf[path_len] = '\0';
+
+    return HTTP_STATUS_OK;
 }
