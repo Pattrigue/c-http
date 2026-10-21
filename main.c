@@ -65,6 +65,8 @@ typedef struct http_request_line {
 
 static http_status parse_request(const char *request);
 static http_status parse_request_line(const char *request_line);
+static http_status
+parse_method(const char *request_line, const char *method_end, http_method *method);
 
 int main(void) {
     // By default, sending to a client that has disconnected kills the whole
@@ -250,10 +252,28 @@ static http_status parse_request_line(const char *request_line) {
         return HTTP_STATUS_BAD_REQUEST;
     }
 
-    // Construct request line struct
+    // Parse method
+    http_method method = HTTP_METHOD_COUNT;
+    http_status status = parse_method(request_line, spaces[0], &method);
+
+    if (status != HTTP_STATUS_OK) {
+        return status;
+    }
+
+    if (method != HTTP_METHOD_GET) {
+        return HTTP_STATUS_METHOD_NOT_ALLOWED;
+    }
+
+    // Parse path
+
+    return HTTP_STATUS_OK;
+}
+
+static http_status
+parse_method(const char *request_line, const char *method_end, http_method *method) {
     char method_buff[10];
     size_t buff_size = sizeof method_buff;
-    size_t n = spaces[0] - request_line;
+    size_t n = method_end - request_line;
 
     if (n >= buff_size) {
         return HTTP_STATUS_NOT_IMPLEMENTED;
@@ -262,21 +282,13 @@ static http_status parse_request_line(const char *request_line) {
     memcpy(method_buff, request_line, n);
     method_buff[n] = '\0';
 
-    http_method method = HTTP_METHOD_COUNT;
+    *method = HTTP_METHOD_COUNT;
     for (int i = 0; i < HTTP_METHOD_COUNT; i++) {
         if (strcmp(method_buff, method_names[i]) == 0) {
-            method = (http_method)i;
-            break;
+            *method = (http_method)i;
+            return HTTP_STATUS_OK;
         }
     }
 
-    if (method == HTTP_METHOD_COUNT) {
-        return HTTP_STATUS_NOT_IMPLEMENTED;
-    }
-
-    if (method != HTTP_METHOD_GET) {
-        return HTTP_STATUS_METHOD_NOT_ALLOWED;
-    }
-
-    return HTTP_STATUS_OK;
+    return HTTP_STATUS_NOT_IMPLEMENTED;
 }
