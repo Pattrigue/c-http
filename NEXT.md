@@ -1,6 +1,3 @@
-
-- send the real status - replace the hardcoded 200 OK with a status line built from status, such as HTTP/1.1 405 Method Not Allowed.
-  - need some way to map each status to its reason phrase; the same table trick as method_names works here. snprintf builds the line.
 - add Allow: GET to 405 responses
 - log the parsed parts for successful requests, like method=GET path=/ version=HTTP/1.1, method_names[method] gives us the method string.
 - create http_request wrapper struct (wraps http_request_line and more)

@@ -14,7 +14,8 @@
 #define PORT 8080
 #define BACKLOG 10
 #define PATH_BUFF_SIZE 2048
-#define BUFF_SIZE 4096 // bytes
+#define REQUEST_BUFF_SIZE 4096 // bytes
+#define RESPONSE_BUFF_SIZE 1024
 #define MAX_METHOD_LEN 10
 
 typedef enum http_status {
@@ -77,6 +78,8 @@ parse_path(const char *path_start, const char *path_end, char *out, size_t out_s
 static http_status parse_http_version(const char *version_str, http_version *out);
 
 static bool is_digit(char c);
+
+static const char *http_status_reason(http_status status);
 
 int main(void) {
     // By default, sending to a client that has disconnected kills the whole
@@ -143,8 +146,8 @@ int main(void) {
         }
 
         // Read message from the socket
-        char buff[BUFF_SIZE];
-        ssize_t bytes_read = recv(client_fd, buff, BUFF_SIZE - 1, 0);
+        char buff[REQUEST_BUFF_SIZE];
+        ssize_t bytes_read = recv(client_fd, buff, REQUEST_BUFF_SIZE - 1, 0);
 
         if (bytes_read == -1) {
             perror("Receive failed");
@@ -158,12 +161,24 @@ int main(void) {
         http_request_line request_line;
         http_status status = parse_request(buff, &request_line);
 
-        // Return hardcoded HTTP 1.1 response (for now)
-        // TODO: Use status in response
-        const char *response = "HTTP/1.1 200 OK\r\n"
-                               "Content-Length: 0\r\n\r\n";
+        // Return HTTP 1.1 response
+        const char *reason = http_status_reason(status);
+        char response[RESPONSE_BUFF_SIZE];
+        int response_len = snprintf(
+            response,
+            sizeof response,
+            "HTTP/1.1 %d %s\r\nContent-Length: 0\r\n\r\n",
+            status,
+            reason
+        );
 
-        if (send(client_fd, response, strlen(response), 0) == -1) {
+        if (response_len < 0 || (size_t)response_len >= sizeof response) {
+            close(client_fd);
+            fprintf(stderr, "Invalid response length: %d\n", response_len);
+            continue;
+        }
+
+        if (send(client_fd, response, (size_t)response_len, 0) == -1) {
             perror("Send failed");
         }
 
@@ -178,7 +193,7 @@ static http_status parse_request(const char *request, http_request_line *out) {
     size_t char_index = 0;
     int line_num = 0;
 
-    char line_buff[BUFF_SIZE];
+    char line_buff[REQUEST_BUFF_SIZE];
 
     for (size_t i = 0; i < len; i++) {
         if (request[i] != '\r') {
@@ -361,3 +376,24 @@ static http_status parse_http_version(const char *version_str, http_version *out
 }
 
 static bool is_digit(char c) { return c >= '0' && c <= '9'; }
+
+static const char *http_status_reason(http_status status) {
+    switch (status) {
+    case HTTP_STATUS_OK:
+        return "OK";
+    case HTTP_STATUS_BAD_REQUEST:
+        return "Bad Request";
+    case HTTP_STATUS_METHOD_NOT_ALLOWED:
+        return "Method Not Allowed";
+    case HTTP_STATUS_URI_TOO_LONG:
+        return "URI Too Long";
+    case HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE:
+        return "Request Header Fields Too Large";
+    case HTTP_STATUS_NOT_IMPLEMENTED:
+        return "Not Implemented";
+    case HTTP_STATUS_HTTP_VERSION_NOT_SUPPORTED:
+        return "HTTP Version Not Supported";
+    }
+
+    return "Unknown";
+}
