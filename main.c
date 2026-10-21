@@ -173,7 +173,6 @@ static http_status parse_request_line(const char *request_line) {
     int space_count = 0;
 
     const char *spaces[2];
-    const char method[6] = {};
 
     for (size_t i = 0; i < request_line_len; i++) {
         if (request_line[i] != ' ') {
