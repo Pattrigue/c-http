@@ -79,6 +79,8 @@ static http_status parse_http_version(const char *version_str, http_version *out
 
 static bool is_digit(char c);
 
+static bool is_visible_ascii(char c);
+
 static const char *http_status_reason(http_status status);
 
 static const char *http_version_name(http_version version);
@@ -360,6 +362,14 @@ parse_path(const char *path_start, const char *path_end, char *out, size_t out_s
         return HTTP_STATUS_URI_TOO_LONG;
     }
 
+    // Only allow visible ASCII (RFC VCHAR).Rejects control characters and
+    // non-ASCII bytes, which also prevents log and terminal injection
+    for (size_t i = 0; i < len; i++) {
+        if (!is_visible_ascii(path_start[i])) {
+            return HTTP_STATUS_BAD_REQUEST;
+        }
+    }
+
     memcpy(out, path_start, len);
     out[len] = '\0';
 
@@ -429,3 +439,5 @@ static const char *http_version_name(http_version version) {
 
     return "Unknown";
 }
+
+static bool is_visible_ascii(char c) { return c >= 0x21 && c <= 0x7E; }
