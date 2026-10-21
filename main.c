@@ -2,6 +2,7 @@
 #include <limits.h>
 #include <netinet/in.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,12 +10,12 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <wchar.h>
 
 #define PORT 8080
 #define BACKLOG 10
-#define MAX_PATH_LEN 2048
-#define BUFFER_SIZE 4096 // bytes
+#define PATH_BUFF_SIZE 2048
+#define BUFF_SIZE 4096 // bytes
+#define MAX_METHOD_LEN 10
 
 typedef enum http_status {
     HTTP_STATUS_OK = 200,
@@ -23,12 +24,12 @@ typedef enum http_status {
     HTTP_STATUS_URI_TOO_LONG = 414,
     HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE = 431,
     HTTP_STATUS_NOT_IMPLEMENTED = 501,
+    HTTP_STATUS_HTTP_VERSION_NOT_SUPPORTED = 505,
 } http_status;
 
 typedef enum http_version {
-    HTTP_1_0,
-    HTTP_1_1,
-    HTTP_2_0,
+    HTTP_VERSION_1_0,
+    HTTP_VERSION_1_1,
 } http_version;
 
 typedef enum http_method {
@@ -60,19 +61,22 @@ static const char *method_names[HTTP_METHOD_COUNT] = {
 
 typedef struct http_request_line {
     http_method method;
-    char *path;
+    char path[PATH_BUFF_SIZE];
     http_version version;
 } http_request_line;
 
-static http_status parse_request(const char *request);
+static http_status parse_request(const char *request, http_request_line *out);
 
-static http_status parse_request_line(const char *request_line);
+static http_status parse_request_line(const char *request_line, http_request_line *out);
+
+static http_status parse_method(const char *request_line, const char *method_end, http_method *out);
 
 static http_status
-parse_method(const char *request_line, const char *method_end, http_method *method);
+parse_path(const char *path_start, const char *path_end, char *out, size_t out_size);
 
-static http_status
-parse_path(const char *path_start, const char *path_end, char *dest_buf, size_t dest_size);
+static http_status parse_http_version(const char *version_str, http_version *out);
+
+static bool is_digit(char c);
 
 int main(void) {
     // By default, sending to a client that has disconnected kills the whole
@@ -139,8 +143,8 @@ int main(void) {
         }
 
         // Read message from the socket
-        char buff[BUFFER_SIZE];
-        ssize_t bytes_read = recv(client_fd, buff, BUFFER_SIZE - 1, 0);
+        char buff[BUFF_SIZE];
+        ssize_t bytes_read = recv(client_fd, buff, BUFF_SIZE - 1, 0);
 
         if (bytes_read == -1) {
             perror("Receive failed");
@@ -151,7 +155,8 @@ int main(void) {
         buff[bytes_read] = '\0';
         // printf("Read from client:\n%s\n", buff);
 
-        http_status status = parse_request(buff);
+        http_request_line request_line;
+        http_status status = parse_request(buff, &request_line);
 
         // Return hardcoded HTTP 1.1 response (for now)
         // TODO: Use status in response
@@ -168,12 +173,12 @@ int main(void) {
     return 0;
 }
 
-static http_status parse_request(const char *request) {
+static http_status parse_request(const char *request, http_request_line *out) {
     size_t len = strlen(request);
     size_t char_index = 0;
     int line_num = 0;
 
-    char line_buff[BUFFER_SIZE];
+    char line_buff[BUFF_SIZE];
 
     for (size_t i = 0; i < len; i++) {
         if (request[i] != '\r') {
@@ -201,7 +206,7 @@ static http_status parse_request(const char *request) {
         char_index = i + 2;
 
         if (line_num == 0) {
-            http_status status = parse_request_line(line_buff);
+            http_status status = parse_request_line(line_buff, out);
 
             if (status != HTTP_STATUS_OK) {
                 return status;
@@ -220,7 +225,7 @@ static http_status parse_request(const char *request) {
 }
 
 // Parse a request line like "GET /index.html HTTP/1.1"
-static http_status parse_request_line(const char *request_line) {
+static http_status parse_request_line(const char *request_line, http_request_line *out) {
     size_t request_line_len = strlen(request_line);
     int space_count = 0;
 
@@ -259,21 +264,24 @@ static http_status parse_request_line(const char *request_line) {
     }
 
     // Parse method
-    http_method method = HTTP_METHOD_COUNT;
-    http_status status = parse_method(request_line, spaces[0], &method);
+    http_status status = parse_method(request_line, spaces[0], &out->method);
 
     if (status != HTTP_STATUS_OK) {
         return status;
     }
 
-    if (method != HTTP_METHOD_GET) {
+    if (out->method != HTTP_METHOD_GET) {
         return HTTP_STATUS_METHOD_NOT_ALLOWED;
     }
 
     // Parse path
-    char path_buf[MAX_PATH_LEN + 1]; // to include '\0'
-    status = parse_path(spaces[0] + 1, spaces[1], path_buf, sizeof path_buf);
+    status = parse_path(spaces[0] + 1, spaces[1], out->path, sizeof out->path);
+    if (status != HTTP_STATUS_OK) {
+        return status;
+    }
 
+    // Parse HTTP version
+    status = parse_http_version(spaces[1] + 1, &out->version);
     if (status != HTTP_STATUS_OK) {
         return status;
     }
@@ -282,22 +290,21 @@ static http_status parse_request_line(const char *request_line) {
 }
 
 static http_status
-parse_method(const char *request_line, const char *method_end, http_method *method) {
-    char method_buff[10];
-    size_t buff_size = sizeof method_buff;
+parse_method(const char *request_line, const char *method_end, http_method *out) {
+    char method_buff[MAX_METHOD_LEN];
     size_t n = method_end - request_line;
 
-    if (n >= buff_size) {
+    if (n >= MAX_METHOD_LEN) {
         return HTTP_STATUS_NOT_IMPLEMENTED;
     }
 
     memcpy(method_buff, request_line, n);
     method_buff[n] = '\0';
 
-    *method = HTTP_METHOD_COUNT;
+    *out = HTTP_METHOD_COUNT;
     for (int i = 0; i < HTTP_METHOD_COUNT; i++) {
         if (strcmp(method_buff, method_names[i]) == 0) {
-            *method = (http_method)i;
+            *out = (http_method)i;
             return HTTP_STATUS_OK;
         }
     }
@@ -306,19 +313,51 @@ parse_method(const char *request_line, const char *method_end, http_method *meth
 }
 
 static http_status
-parse_path(const char *path_start, const char *path_end, char *dest_buf, size_t dest_size) {
+parse_path(const char *path_start, const char *path_end, char *out, size_t out_size) {
     if (*path_start != '/') {
         return HTTP_STATUS_BAD_REQUEST;
     }
 
-    size_t path_len = path_end - path_start;
+    size_t len = path_end - path_start;
 
-    if (path_len >= dest_size) {
+    if (len >= out_size) {
         return HTTP_STATUS_URI_TOO_LONG;
     }
 
-    memcpy(dest_buf, path_start, path_len);
-    dest_buf[path_len] = '\0';
+    memcpy(out, path_start, len);
+    out[len] = '\0';
 
     return HTTP_STATUS_OK;
 }
+
+static http_status parse_http_version(const char *version_str, http_version *out) {
+    if (strlen(version_str) != 8) {
+        return HTTP_STATUS_BAD_REQUEST;
+    }
+
+    if (strncmp(version_str, "HTTP/", 5) != 0) {
+        return HTTP_STATUS_BAD_REQUEST;
+    }
+
+    if (!is_digit(version_str[5]) || !is_digit(version_str[7])) {
+        return HTTP_STATUS_BAD_REQUEST;
+    }
+
+    if (version_str[6] != '.') {
+        return HTTP_STATUS_BAD_REQUEST;
+    }
+
+    if (strcmp(version_str, "HTTP/1.0") == 0) {
+        *out = HTTP_VERSION_1_0;
+        return HTTP_STATUS_OK;
+    }
+
+    if (strcmp(version_str, "HTTP/1.1") == 0) {
+        *out = HTTP_VERSION_1_1;
+        return HTTP_STATUS_OK;
+    }
+
+    return HTTP_STATUS_HTTP_VERSION_NOT_SUPPORTED;
+}
+
+static bool is_digit(char c) { return c >= '0' && c <= '9'; }
