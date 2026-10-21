@@ -163,13 +163,17 @@ int main(void) {
 
         // Return HTTP 1.1 response
         const char *reason = http_status_reason(status);
+        const char *allow_header = status == HTTP_STATUS_METHOD_NOT_ALLOWED ? "Allow: GET\r\n" : "";
+
         char response[RESPONSE_BUFF_SIZE];
+
         int response_len = snprintf(
             response,
             sizeof response,
-            "HTTP/1.1 %d %s\r\nContent-Length: 0\r\n\r\n",
+            "HTTP/1.1 %d %s\r\nContent-Length: 0\r\n%s\r\n",
             status,
-            reason
+            reason,
+            allow_header
         );
 
         if (response_len < 0 || (size_t)response_len >= sizeof response) {
