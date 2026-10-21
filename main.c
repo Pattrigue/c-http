@@ -1,24 +1,67 @@
 #include <err.h>
+#include <limits.h>
 #include <netinet/in.h>
 #include <signal.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <wchar.h>
 
 #define PORT 8080
 #define BACKLOG 10
 #define BUFFER_SIZE 4096 // bytes
 
 typedef enum http_status {
-    HTTP_OK = 200,
-    HTTP_BAD_REQUEST = 400,
-    HTTP_METHOD_NOT_ALLOWED = 405,
-    HTTP_URI_TOO_LONG = 414,
-    HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE = 431,
+    HTTP_STATUS_OK = 200,
+    HTTP_STATUS_BAD_REQUEST = 400,
+    HTTP_STATUS_METHOD_NOT_ALLOWED = 405,
+    HTTP_STATUS_URI_TOO_LONG = 414,
+    HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE = 431,
+    HTTP_STATUS_NOT_IMPLEMENTED = 501,
 } http_status;
+
+typedef enum http_version {
+    HTTP_1_0,
+    HTTP_1_1,
+    HTTP_2_0,
+} http_version;
+
+typedef enum http_method {
+    HTTP_METHOD_GET,
+    HTTP_METHOD_QUERY,
+    HTTP_METHOD_HEAD,
+    HTTP_METHOD_POST,
+    HTTP_METHOD_PUT,
+    HTTP_METHOD_DELETE,
+    HTTP_METHOD_CONNECT,
+    HTTP_METHOD_OPTIONS,
+    HTTP_METHOD_TRACE,
+    HTTP_METHOD_PATCH,
+    HTTP_METHOD_COUNT, // last item to give the enum a count, not an actual HTTP method
+} http_method;
+
+static const char *method_names[HTTP_METHOD_COUNT] = {
+    [HTTP_METHOD_GET] = "GET",
+    [HTTP_METHOD_QUERY] = "QUERY",
+    [HTTP_METHOD_HEAD] = "HEAD",
+    [HTTP_METHOD_POST] = "POST",
+    [HTTP_METHOD_PUT] = "PUT",
+    [HTTP_METHOD_DELETE] = "DELETE",
+    [HTTP_METHOD_CONNECT] = "CONNECT",
+    [HTTP_METHOD_OPTIONS] = "OPTIONS",
+    [HTTP_METHOD_TRACE] = "TRACE",
+    [HTTP_METHOD_PATCH] = "PATCH",
+};
+
+typedef struct http_request_line {
+    http_method method;
+    char *path;
+    http_version version;
+} http_request_line;
 
 static http_status parse_request(const char *request);
 static http_status parse_request_line(const char *request_line);
@@ -130,7 +173,7 @@ static http_status parse_request(const char *request) {
         }
 
         if (request[i + 1] != '\n') {
-            return HTTP_BAD_REQUEST;
+            return HTTP_STATUS_BAD_REQUEST;
         }
 
         size_t char_count = i - char_index; // exclude \r\n
@@ -140,7 +183,8 @@ static http_status parse_request(const char *request) {
         }
 
         if (char_count >= sizeof line_buff) { // >= to account for the '\0'
-            return line_num == 0 ? HTTP_URI_TOO_LONG : HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE;
+            return line_num == 0 ? HTTP_STATUS_URI_TOO_LONG
+                                 : HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE;
         }
 
         memcpy(line_buff, request + char_index, char_count);
@@ -151,7 +195,7 @@ static http_status parse_request(const char *request) {
         if (line_num == 0) {
             http_status status = parse_request_line(line_buff);
 
-            if (status != HTTP_OK) {
+            if (status != HTTP_STATUS_OK) {
                 return status;
             }
         }
@@ -161,10 +205,10 @@ static http_status parse_request(const char *request) {
 
     if (line_num == 0) {
         // No lines parsed
-        return HTTP_BAD_REQUEST;
+        return HTTP_STATUS_BAD_REQUEST;
     }
 
-    return HTTP_OK;
+    return HTTP_STATUS_OK;
 }
 
 // Parse a request line like "GET /index.html HTTP/1.1"
@@ -181,30 +225,58 @@ static http_status parse_request_line(const char *request_line) {
 
         // No space at the start
         if (i == 0) {
-            return HTTP_BAD_REQUEST;
+            return HTTP_STATUS_BAD_REQUEST;
         }
 
         // No space at the end
         if (i == request_line_len - 1) {
-            return HTTP_BAD_REQUEST;
+            return HTTP_STATUS_BAD_REQUEST;
         }
 
         // No two spaces in a row
         if (request_line[i - 1] == ' ') {
-            return HTTP_BAD_REQUEST;
+            return HTTP_STATUS_BAD_REQUEST;
         }
 
         // Only two spaces allowed
         if (space_count >= 2) {
-            return HTTP_BAD_REQUEST;
+            return HTTP_STATUS_BAD_REQUEST;
         }
 
         spaces[space_count++] = &request_line[i];
     }
 
     if (space_count != 2) {
-        return HTTP_BAD_REQUEST;
+        return HTTP_STATUS_BAD_REQUEST;
     }
 
-    return HTTP_OK;
+    // Construct request line struct
+    char method_buff[10];
+    size_t buff_size = sizeof method_buff;
+    size_t n = spaces[0] - request_line;
+
+    if (n >= buff_size) {
+        return HTTP_STATUS_NOT_IMPLEMENTED;
+    }
+
+    memcpy(method_buff, request_line, n);
+    method_buff[n] = '\0';
+
+    http_method method = HTTP_METHOD_COUNT;
+    for (int i = 0; i < HTTP_METHOD_COUNT; i++) {
+        if (strcmp(method_buff, method_names[i]) == 0) {
+            method = (http_method)i;
+            break;
+        }
+    }
+
+    if (method == HTTP_METHOD_COUNT) {
+        return HTTP_STATUS_NOT_IMPLEMENTED;
+    }
+
+    if (method != HTTP_METHOD_GET) {
+        return HTTP_STATUS_METHOD_NOT_ALLOWED;
+    }
+
+    return HTTP_STATUS_OK;
 }
