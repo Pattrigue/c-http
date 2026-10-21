@@ -1,6 +1,6 @@
-- finish validation on request line:
-  - check if there's only 2 spaces
-  - construct request line struct
+- parse path
+- parse http version
+- construct request line struct
 
 - [x] Setup: C compiler, a Makefile, a git repo with NEXT.md. Skim the stream-server section of Beej's guide.
 - [x] Milestone 1, hello world: accept a connection, print the raw request, send a hardcoded 200 OK. Test with curl -v and a browser.
