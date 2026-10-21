@@ -1,4 +1,3 @@
-- log the parsed parts for successful requests, like method=GET path=/ version=HTTP/1.1, method_names[method] gives us the method string.
 - create http_request wrapper struct (wraps http_request_line and more)
 - split into multiple files
 

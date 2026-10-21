@@ -81,6 +81,8 @@ static bool is_digit(char c);
 
 static const char *http_status_reason(http_status status);
 
+static const char *http_version_name(http_version version);
+
 int main(void) {
     // By default, sending to a client that has disconnected kills the whole
     // server (SIGPIPE). Ignore that signal so send() just returns an error.
@@ -160,6 +162,21 @@ int main(void) {
 
         http_request_line request_line;
         http_status status = parse_request(buff, &request_line);
+
+        // Log response
+        if (status == HTTP_STATUS_OK) {
+            const char *version_name = http_version_name(request_line.version);
+            const char *method_name = method_names[request_line.method];
+
+            printf(
+                "OK: method=%s path=%s version=%s\n",
+                method_name,
+                request_line.path,
+                version_name
+            );
+        } else {
+            printf("FAIL: %d %s\n", status, http_status_reason(status));
+        }
 
         // Return HTTP 1.1 response
         const char *reason = http_status_reason(status);
@@ -397,6 +414,17 @@ static const char *http_status_reason(http_status status) {
         return "Not Implemented";
     case HTTP_STATUS_HTTP_VERSION_NOT_SUPPORTED:
         return "HTTP Version Not Supported";
+    }
+
+    return "Unknown";
+}
+
+static const char *http_version_name(http_version version) {
+    switch (version) {
+    case HTTP_VERSION_1_0:
+        return "HTTP/1.0";
+    case HTTP_VERSION_1_1:
+        return "HTTP/1.1";
     }
 
     return "Unknown";
