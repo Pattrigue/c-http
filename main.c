@@ -167,14 +167,43 @@ static http_status parse_request(const char *request) {
     return HTTP_OK;
 }
 
+// Parse a request line like "GET /index.html HTTP/1.1"
 static http_status parse_request_line(const char *request_line) {
-    const char *first_space = strchr(request_line, ' ');
-    if (first_space == NULL) {
-        return HTTP_BAD_REQUEST;
+    size_t request_line_len = strlen(request_line);
+    int space_count = 0;
+
+    const char *spaces[2];
+    const char method[6] = {};
+
+    for (size_t i = 0; i < request_line_len; i++) {
+        if (request_line[i] != ' ') {
+            continue;
+        }
+
+        // No space at the start
+        if (i == 0) {
+            return HTTP_BAD_REQUEST;
+        }
+
+        // No space at the end
+        if (i == request_line_len - 1) {
+            return HTTP_BAD_REQUEST;
+        }
+
+        // No two spaces in a row
+        if (request_line[i - 1] == ' ') {
+            return HTTP_BAD_REQUEST;
+        }
+
+        // Only two spaces allowed
+        if (space_count >= 2) {
+            return HTTP_BAD_REQUEST;
+        }
+
+        spaces[space_count++] = &request_line[i];
     }
 
-    const char *second_space = strchr(first_space + 1, ' ');
-    if (second_space == NULL) {
+    if (space_count != 2) {
         return HTTP_BAD_REQUEST;
     }
 
