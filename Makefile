@@ -1,6 +1,6 @@
 CC      = cc
 CFLAGS  = -Wall -Wextra # Common warnings + extra warnings
-mode   ?= debug
+MODE    ?= debug
 
 
 ifeq ($(MODE),release)
@@ -12,12 +12,18 @@ else
 endif
 
 
-all: main
+all: build/c-http
 
-main: main.c
-	$(CC) $(CFLAGS) -o main main.c
+build/c-http: src/main.c src/http.h src/http.c | build
+	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^)
+
+build:
+	mkdir -p build
+
+compdb: clean
+	bear -- $(MAKE)
 
 clean:
-	rm -f main
+	rm -rf build
 
-.PHONY: all clean
+.PHONY: all clean compdb
