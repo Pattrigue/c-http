@@ -1,4 +1,3 @@
-#include <asm-generic/socket.h>
 #include <err.h>
 #include <netinet/in.h>
 #include <signal.h>
@@ -148,6 +147,12 @@ int main(void) {
             perror("Send failed");
         }
 
+        // Graceful close: signal end of response
+        shutdown(client_fd, SHUT_WR);
+
+        // Drain unread input so close() doesn't send a reset
+        while (recv(client_fd, buf, sizeof buf, 0) > 0) {
+        }
         close(client_fd);
     }
 

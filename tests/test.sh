@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Sends raw HTTP requests to the running server and checks each response.
 # Usage: ./test.sh [port]    (start the server first)
+#        SKIP_SLOW=1 ./test.sh    skips the ~12 second timeout test
+#        TIMEOUT=5 ./test.sh      if the server's timeout isn't 10 seconds
 # Needs openbsd-netcat (for nc -N).
 
 PORT="${1:-8080}"
+TIMEOUT="${TIMEOUT:-10}"   # must match CLIENT_TIMEOUT_SEC in the server
 pass=0
 fail=0
 
@@ -123,6 +126,50 @@ echo "Header size"
 long_header="X-Long: $(printf 'a%.0s' {1..5000})"
 check 431 "Headers larger than the buffer" "GET / HTTP/1.1"$'\r\n'"$long_header$end"
 check 200 "Headers just under the limit"   "GET / HTTP/1.1"$'\r\n'"X-Fill: $(printf 'a%.0s' {1..3900})$end"
+
+echo "Timeout (takes about $((TIMEOUT + 2)) seconds; skip with SKIP_SLOW=1)"
+if [[ -n "$SKIP_SLOW" ]]; then
+    echo "  SKIP  timeout tests"
+else
+    # A client sends half a request, then goes silent for longer than the
+    # server's timeout. The server should give up on it (408 or a silent close).
+    stalled_out=$(mktemp)
+    # It stays silent far longer than the timeout, so only the server's
+    # timeout (not the client giving up) can free the server in time.
+    (printf 'GET / HT'; sleep $((TIMEOUT * 3))) | nc -N localhost "$PORT" >"$stalled_out" &
+    stalled_pid=$!
+    sleep 1
+
+    # Meanwhile, a normal request. It can only be answered once the server
+    # has timed out the stalled client, so it proves the server didn't hang.
+    start=$SECONDS
+    response=$(printf 'GET / HTTP/1.1\r\n\r\n' | nc -N -w $((TIMEOUT + 5)) localhost "$PORT")
+    elapsed=$((SECONDS - start))
+    verify 200 "Server recovers from a stalled client (after ${elapsed}s)" "$response"
+
+    if (( elapsed <= TIMEOUT + 2 )); then
+        printf '  PASS  Stalled client cut off within the timeout\n'
+        pass=$((pass + 1))
+    else
+        printf '  FAIL  Stalled client cut off within the timeout\n        took %ss, expected at most %ss\n' "$elapsed" "$((TIMEOUT + 2))"
+        fail=$((fail + 1))
+    fi
+
+    # The stalled client is still "sleeping"; stop it instead of waiting.
+    sleep 1
+    pkill -P "$stalled_pid" 2>/dev/null
+    kill "$stalled_pid" 2>/dev/null
+    wait "$stalled_pid" 2>/dev/null
+    stalled_status=$(head -n 1 "$stalled_out" | tr -d '\r' | awk '{print $2}')
+    if [[ -z "$stalled_status" || "$stalled_status" == "408" ]]; then
+        printf '  PASS  Stalled client gets 408 or a silent close (got %s)\n' "${stalled_status:-close}"
+        pass=$((pass + 1))
+    else
+        printf '  FAIL  Stalled client gets 408 or a silent close\n        got %s\n' "$stalled_status"
+        fail=$((fail + 1))
+    fi
+    rm -f "$stalled_out"
+fi
 
 echo
 echo "$pass passed, $fail failed"
