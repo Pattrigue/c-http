@@ -1,8 +1,8 @@
 #ifndef HTTP_H
 #define HTTP_H
 
-#define PATH_BUFF_SIZE 2048
-#define REQUEST_BUFF_SIZE 4096
+#define PATH_BUF_SIZE 2048
+#define REQUEST_BUF_SIZE 4096
 
 typedef enum http_status {
     HTTP_STATUS_OK = 200,
@@ -35,7 +35,7 @@ typedef enum http_method {
 
 typedef struct http_request_line {
     http_method method;
-    char path[PATH_BUFF_SIZE];
+    char path[PATH_BUF_SIZE];
     http_version version;
 } http_request_line;
 

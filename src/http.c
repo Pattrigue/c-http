@@ -6,7 +6,7 @@
 
 #include "http.h"
 
-#define METHOD_BUFF_SIZE 10
+#define METHOD_BUF_SIZE 10
 
 static http_status parse_http_version(const char *version_str, http_version *out);
 
@@ -39,7 +39,7 @@ http_status http_parse_request(const char *request, http_request_line *out) {
     size_t char_index = 0;
     int line_num = 0;
 
-    char line_buff[REQUEST_BUFF_SIZE];
+    char line_buf[REQUEST_BUF_SIZE];
 
     for (size_t i = 0; i < len; i++) {
         if (request[i] != '\r') {
@@ -56,18 +56,18 @@ http_status http_parse_request(const char *request, http_request_line *out) {
             break;
         }
 
-        if (char_count >= sizeof line_buff) { // >= to account for the '\0'
+        if (char_count >= sizeof line_buf) { // >= to account for the '\0'
             return line_num == 0 ? HTTP_STATUS_URI_TOO_LONG
                                  : HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE;
         }
 
-        memcpy(line_buff, request + char_index, char_count);
-        line_buff[char_count] = '\0';
+        memcpy(line_buf, request + char_index, char_count);
+        line_buf[char_count] = '\0';
 
         char_index = i + 2;
 
         if (line_num == 0) {
-            http_status status = parse_request_line(line_buff, out);
+            http_status status = parse_request_line(line_buf, out);
 
             if (status != HTTP_STATUS_OK) {
                 return status;
@@ -192,19 +192,19 @@ static http_status parse_request_line(const char *request_line, http_request_lin
 
 static http_status
 parse_method(const char *method_start, const char *method_end, http_method *out) {
-    char method_buff[METHOD_BUFF_SIZE];
+    char method_buf[METHOD_BUF_SIZE];
     size_t n = method_end - method_start;
 
-    if (n >= METHOD_BUFF_SIZE) {
+    if (n >= METHOD_BUF_SIZE) {
         return HTTP_STATUS_NOT_IMPLEMENTED;
     }
 
-    memcpy(method_buff, method_start, n);
-    method_buff[n] = '\0';
+    memcpy(method_buf, method_start, n);
+    method_buf[n] = '\0';
 
     *out = HTTP_METHOD_COUNT;
     for (int i = 0; i < HTTP_METHOD_COUNT; i++) {
-        if (strcmp(method_buff, http_method_names[i]) == 0) {
+        if (strcmp(method_buf, http_method_names[i]) == 0) {
             *out = (http_method)i;
             return HTTP_STATUS_OK;
         }
